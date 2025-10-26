@@ -1,13 +1,34 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { chatRequestSchema } from "@shared/schema";
+import { generateChatResponse } from "./gemini";
+import { getRelevantContext } from "./pdfExtractor";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const validatedData = chatRequestSchema.parse(req.body);
+      const { message } = validatedData;
 
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+      const relevantContext = await getRelevantContext(message);
+
+      const response = await generateChatResponse(message, relevantContext);
+
+      res.json(response);
+    } catch (error) {
+      console.error("Chat API error:", error);
+      
+      if (error instanceof Error) {
+        res.status(500).json({
+          error: error.message || "Failed to process your question",
+        });
+      } else {
+        res.status(500).json({
+          error: "An unexpected error occurred",
+        });
+      }
+    }
+  });
 
   const httpServer = createServer(app);
 
