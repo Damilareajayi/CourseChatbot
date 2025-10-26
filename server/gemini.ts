@@ -4,41 +4,57 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function generateChatResponse(
   userMessage: string,
-  textbookContext: string
+  textbookContext: string,
+  availablePages: number[]
 ): Promise<{ message: string; pageReferences: string[] }> {
   try {
-    const systemPrompt = `You are an expert teaching assistant for EME 5608: Trends and Issues in Instructional Design and Technology. 
+    const pageList = availablePages.length > 0
+      ? `Available pages in context: ${availablePages.join(", ")}`
+      : "";
+
+    const systemPrompt = `You are an expert teaching assistant for EME 5608: Trends and Issues in Instructional Design and Technology, taught by Dr. Songhee Han.
 Your role is to help students understand concepts from their textbook by providing clear, accurate answers.
 
-IMPORTANT INSTRUCTIONS:
-1. Answer questions based ONLY on the textbook content provided in the context
-2. Be conversational and educational, like a helpful professor
-3. ALWAYS identify and cite specific page numbers where the information can be found
-4. If you reference multiple topics, provide page numbers for each
-5. If the question is not covered in the textbook content, politely say so and suggest related topics that are covered
-6. Keep responses concise but informative (2-4 paragraphs typically)
-7. Use the exact terminology from the textbook when discussing concepts
+CRITICAL PAGE REFERENCE INSTRUCTIONS:
+1. You have been provided textbook content with explicit page numbers marked as [Page X]
+2. When you reference information, YOU MUST cite the specific page numbers where that information appears
+3. Use ONLY the page numbers that are explicitly shown in the context provided to you
+4. Format page citations like this at the END of your response: [Pages: 15, 41, 112] or [Pages: 45-47, 83]
+5. If information spans multiple pages, list all relevant pages
+6. ${pageList}
 
-FORMAT FOR PAGE REFERENCES:
-- At the end of your response, list page numbers in this format: [Pages: 15, 41-43, 112]
-- Use this exact format so the system can extract the references automatically
+ANSWER GUIDELINES:
+- Answer questions based ONLY on the textbook content provided
+- Be conversational and educational, like a helpful professor
+- Keep responses concise but informative (2-4 paragraphs typically)
+- Use exact terminology from the textbook when discussing concepts
+- If the question cannot be fully answered from the provided context, acknowledge this and provide what information is available
+- Always end with page citations in the specified format
 
-Textbook Context:
+Textbook Context (with page markers):
 ${textbookContext}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       config: {
         systemInstruction: systemPrompt,
+        temperature: 0.7,
       },
       contents: userMessage,
     });
 
     const rawResponse = response.text || "";
     
-    const pageReferences = extractPageReferences(rawResponse);
+    let pageReferences = extractPageReferences(rawResponse);
     
-    const cleanedMessage = rawResponse.replace(/\[Pages?:.*?\]/gi, "").trim();
+    if (pageReferences.length === 0 && availablePages.length > 0) {
+      const topPages = availablePages.slice(0, 3);
+      pageReferences = topPages.map(p => `Page ${p}`);
+    }
+    
+    const cleanedMessage = rawResponse
+      .replace(/\[Pages?:.*?\]/gi, "")
+      .trim();
 
     return {
       message: cleanedMessage,
@@ -65,9 +81,15 @@ function extractPageReferences(text: string): string[] {
       const trimmed = part.trim();
       if (trimmed) {
         if (trimmed.includes("-")) {
-          pageRefs.push(`Pages ${trimmed}`);
+          const rangeMatch = trimmed.match(/(\d+)\s*-\s*(\d+)/);
+          if (rangeMatch) {
+            pageRefs.push(`Pages ${rangeMatch[1]}-${rangeMatch[2]}`);
+          }
         } else {
-          pageRefs.push(`Page ${trimmed}`);
+          const pageNum = trimmed.match(/\d+/);
+          if (pageNum) {
+            pageRefs.push(`Page ${pageNum[0]}`);
+          }
         }
       }
     }
