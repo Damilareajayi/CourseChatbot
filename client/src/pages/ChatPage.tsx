@@ -1,32 +1,78 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ChatMessage as ChatMessageType } from "@shared/schema";
+import { ChatMessage as ChatMessageType, ChatSession } from "@shared/schema";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { CourseSidebar } from "@/components/CourseSidebar";
-import { Menu, X, ArrowDown } from "lucide-react";
+import { ChatHistory } from "@/components/ChatHistory";
+import { Menu, X, ArrowDown, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { cn } from "@/lib/utils";
+import { cn, normalizeChatSession } from "@/lib/utils";
 
 export default function ChatPage() {
+  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  const { data: sessions = [], refetch: refetchSessions } = useQuery<ChatSession[]>({
+    queryKey: ["/api/sessions"],
+    select: (data: any[]) => data.map(normalizeChatSession),
+  });
+
+  const createSessionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/sessions", {});
+      const data = await response.json();
+      return normalizeChatSession(data);
+    },
+    onSuccess: (session: ChatSession) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      setCurrentSessionId(session.id);
+      setMessages([]);
+      setIsHistoryOpen(false);
+    },
+  });
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await apiRequest("DELETE", `/api/sessions/${sessionId}`, undefined);
+    },
+    onSuccess: (_, deletedSessionId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      if (currentSessionId === deletedSessionId) {
+        setCurrentSessionId(undefined);
+        setMessages([]);
+      }
+      toast({
+        title: "Chat deleted",
+        description: "The chat has been successfully deleted.",
+      });
+    },
+  });
+
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const response = await apiRequest("POST", "/api/chat", { message });
+      const response = await apiRequest("POST", "/api/chat", {
+        message,
+        sessionId: currentSessionId,
+      });
       const data = await response.json();
       return data;
     },
     onSuccess: (data) => {
+      if (!currentSessionId) {
+        setCurrentSessionId(data.sessionId);
+      }
+      
       const assistantMessage: ChatMessageType = {
         id: Date.now().toString() + "-assistant",
         role: "assistant",
@@ -35,6 +81,7 @@ export default function ChatPage() {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
     },
     onError: (error: Error) => {
       toast({
@@ -59,6 +106,36 @@ export default function ChatPage() {
 
   const handlePromptClick = (prompt: string) => {
     handleSendMessage(prompt);
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`);
+      if (!response.ok) throw new Error("Failed to load session");
+      
+      const rawSession = await response.json();
+      const session = normalizeChatSession(rawSession);
+      
+      setCurrentSessionId(sessionId);
+      setMessages(session.messages);
+      setIsHistoryOpen(false);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load chat session",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleNewChat = () => {
+    createSessionMutation.mutate();
+  };
+
+  const handleDeleteSession = (sessionId: string) => {
+    if (window.confirm("Are you sure you want to delete this chat?")) {
+      deleteSessionMutation.mutate(sessionId);
+    }
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
@@ -107,6 +184,28 @@ export default function ChatPage() {
         />
       )}
 
+      <div
+        className={cn(
+          "fixed inset-y-0 right-0 w-80 z-50 transform transition-transform duration-300 ease-in-out",
+          isHistoryOpen ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        <ChatHistory
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
+          onDeleteSession={handleDeleteSession}
+        />
+      </div>
+
+      {isHistoryOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsHistoryOpen(false)}
+        />
+      )}
+
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-30">
           <div className="flex items-center justify-between px-4 lg:px-6 h-16">
@@ -135,6 +234,15 @@ export default function ChatPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+                data-testid="button-history"
+              >
+                <History className="w-5 h-5" />
+              </Button>
+              
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/10 border border-secondary/20">
                 <div className="w-2 h-2 rounded-full bg-secondary animate-pulse"></div>
                 <span className="text-xs font-medium text-secondary">
