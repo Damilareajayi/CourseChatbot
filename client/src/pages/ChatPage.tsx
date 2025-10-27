@@ -23,7 +23,8 @@ export default function ChatPage() {
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
       const response = await apiRequest("POST", "/api/chat", { message });
-      return response;
+      const data = await response.json();
+      return data;
     },
     onSuccess: (data) => {
       const assistantMessage: ChatMessageType = {

@@ -1,5 +1,9 @@
 import fs from "fs";
 import path from "path";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const { PDFParse } = require("pdf-parse");
 
 interface TextbookContent {
   fullText: string;
@@ -14,11 +18,14 @@ let cachedContent: TextbookContent | null = null;
 
 export async function extractTextbookContent(): Promise<TextbookContent> {
   if (cachedContent) {
+    console.log("✓ Using cached textbook content");
     return cachedContent;
   }
 
+  let parser: any = null;
+
   try {
-    const { default: pdfParse } = await import("pdf-parse");
+    console.log("Starting PDF extraction...");
     
     const pdfPath = path.join(
       process.cwd(),
@@ -27,27 +34,42 @@ export async function extractTextbookContent(): Promise<TextbookContent> {
     );
 
     if (!fs.existsSync(pdfPath)) {
-      throw new Error("Textbook PDF not found");
+      throw new Error(`Textbook PDF not found at: ${pdfPath}`);
     }
 
+    console.log("Reading PDF file...");
     const dataBuffer = fs.readFileSync(pdfPath);
-    const data = await pdfParse(dataBuffer);
+    
+    console.log("Parsing PDF content...");
+    
+    parser = new PDFParse({ data: dataBuffer });
+    const result = await parser.getText();
+    
+    const info = await parser.getInfo({ parsePageInfo: false });
 
     cachedContent = {
-      fullText: data.text,
-      totalPages: data.numpages,
+      fullText: result.text,
+      totalPages: info.total || 1,
       metadata: {
-        title: "Trends and Issues in Instructional Design and Technology",
-        author: "Reiser, Carr-Chellman, Dempsey",
+        title: info.info?.Title || "Trends and Issues in Instructional Design and Technology",
+        author: info.info?.Author || "Reiser, Carr-Chellman, Dempsey",
       },
     };
 
-    console.log(`✓ Extracted textbook: ${cachedContent.totalPages} pages, ${Math.round(data.text.length / 1000)}k characters`);
+    console.log(`✓ Successfully extracted textbook: ${cachedContent.totalPages} pages, ${Math.round(result.text.length / 1000)}k characters`);
     
     return cachedContent;
   } catch (error) {
     console.error("PDF extraction error:", error);
-    throw new Error("Failed to extract textbook content");
+    throw new Error(`Failed to extract textbook content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    if (parser) {
+      try {
+        await parser.destroy();
+      } catch (e) {
+        console.warn("Could not destroy PDF parser:", e);
+      }
+    }
   }
 }
 
@@ -59,6 +81,8 @@ export async function getRelevantContext(query: string): Promise<{
   
   const queryLower = query.toLowerCase();
   const keywords = extractKeywords(queryLower);
+  
+  console.log(`Searching for keywords: ${keywords.slice(0, 5).join(", ")}${keywords.length > 5 ? "..." : ""}`);
   
   const chunkSize = 3000;
   const chunks: Array<{text: string; startPos: number}> = [];
@@ -103,6 +127,8 @@ export async function getRelevantContext(query: string): Promise<{
   );
   
   const context = contextParts.join("\n\n---\n\n");
+  
+  console.log(`Found ${topChunks.length} relevant chunks across pages: ${uniquePages.slice(0, 5).join(", ")}${uniquePages.length > 5 ? "..." : ""}`);
   
   return {
     context,
