@@ -30,7 +30,7 @@ export async function extractTextbookContent(): Promise<TextbookContent> {
     const pdfPath = path.join(
       process.cwd(),
       "attached_assets",
-      "Robert, G. et al. (2024). Trends and Issues in Instructional Design 1_1761520802485.pdf"
+      "Robert,_G._et_al._(2024)._Trends_and_Issues_in_Instructional_D_1769706245470.pdf"
     );
 
     if (!fs.existsSync(pdfPath)) {
