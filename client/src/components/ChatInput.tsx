@@ -93,7 +93,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono text-xs">Shift + Enter</kbd> for new line
           </p>
           <p className="text-xs text-muted-foreground/80 italic" data-testid="text-disclaimer">
-            This platform is built using Gemini API. AI can make mistakes, so double-check it.
+            This platform is built using the Gemini API. AI can make mistakes, so please double-check the information.
           </p>
         </div>
       </div>
