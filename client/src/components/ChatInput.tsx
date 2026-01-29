@@ -87,10 +87,13 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           </div>
         </div>
 
-        <div className="mt-2 px-2">
+        <div className="mt-2 px-2 space-y-1">
           <p className="text-xs text-muted-foreground">
             Press <kbd className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono text-xs">Enter</kbd> to send,{" "}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono text-xs">Shift + Enter</kbd> for new line
+          </p>
+          <p className="text-xs text-muted-foreground/80 italic" data-testid="text-disclaimer">
+            This platform is built using Gemini API. AI can make mistakes, so double-check it.
           </p>
         </div>
       </div>
