@@ -1,6 +1,12 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, log } from "./vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Define __dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -16,6 +22,7 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: false }));
 
+// Logging Middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -47,6 +54,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Register API Routes first
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -57,20 +65,28 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // === PRODUCTION SETUP ===
+  // This is the part that fixes the Cloud Run hosting
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    // 1. Serve static files from the current directory (where dist/index.js is running)
+    app.use(express.static(__dirname));
+
+    // 2. Catch-all route to serve index.html for client-side routing
+    app.get("*", (req, res) => {
+      // Don't intercept API calls
+      if (req.path.startsWith("/api")) {
+         res.status(404).json({ message: "API Route not found" });
+         return;
+      }
+      res.sendFile(path.join(__dirname, "index.html"));
+    });
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // Use the PORT environment variable provided by Google Cloud
   const port = parseInt(process.env.PORT || '5000', 10);
+  
   server.listen({
     port,
     host: "0.0.0.0",
