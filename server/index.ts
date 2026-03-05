@@ -71,7 +71,7 @@ app.use((req, res, next) => {
     await setupVite(app, server);
   } else {
     // 1. Serve static files from the current directory (where dist/index.js is running)
-    app.use(express.static(__dirname));
+    app.use(express.static(path.join(__dirname, "public")));
 
     // 2. Catch-all route to serve index.html for client-side routing
     app.get("*", (req, res) => {
@@ -80,7 +80,7 @@ app.use((req, res, next) => {
          res.status(404).json({ message: "API Route not found" });
          return;
       }
-      res.sendFile(path.join(__dirname, "index.html"));
+      res.sendFile(path.join(__dirname, "public", "index.html"));
     });
   }
 
